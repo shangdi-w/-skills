@@ -58,3 +58,10 @@ By using the contents of this repository, you agree to:
 # Load the skill in Hermes Agent
 skill_view(name='hacker-asm-decompile')
 ```
+
+## 📁 Skills Inventory (Updated)
+
+| Skill | Description |
+|-------|-------------|
+| `hacker-asm-decompile` | 全平台反编译与逆向工程 — 24大类 (JAR/APK/EXE/ELF/Mach-O/.NET/JS/WASM/Python/PHP/Electron/Unity/Flutter/Go + 脱壳/Rust/Lua/Swift/固件/LLM) |
+| `redteam-av-evasion` | 红队免杀对抗完全手册 — 入门到专家 (18章：基础知识→工具→Shellcode加载→LOLBins→AI免杀→EDR对抗→现代Loader) |
