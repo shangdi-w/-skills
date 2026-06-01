@@ -945,9 +945,3 @@ find /www -type f        # Web 接口
 3. **动静结合**：静态看不懂就上 Frida/x64dbg 动态跟
 4. **字符串是金矿**：搜 `http`/`secret`/`key`/`token`/`password`/加密算法名
 5. **运行时 dump 是终极杀招**：任何加密/混淆最终要在内存中解密,在那一刻 dump
-
----
-
-## 📎 参考文件
-
-- [GitHub REST API 批量上传模式](references/github-upload-pattern.md) — `git push` 超时时用 Contents API 批量推文件，含 Fine-grained Token 权限配置和已知坑
