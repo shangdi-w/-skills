@@ -1,11 +1,11 @@
 ---
 name: hacker-asm-decompile
-description: 全平台反编译与逆向工程工具链 — JAR/APK/EXE/ELF/Mach-O/.NET/JS/WASM/Python/PHP/Electron/Unity/Flutter/Go/IPA 全覆盖。提供实战命令、反混淆技巧和工具速查。
+description: 全平台反编译与逆向工程工具链 — JAR/APK/EXE/ELF/Mach-O/.NET/JS/WASM/Python/PHP/Electron/Unity/Flutter/Go/IPA + 脱壳(UPX/Themida/VMProtect) + Rust/Swift/Lua + LLM辅助逆向 + 固件分析。24 类全覆盖,实战命令即用。
 ---
 
 # 全平台反编译与逆向工程
 
-> 覆盖 JAR · APK · EXE/DLL · ELF · Mach-O · .NET · JS/WASM · Python · PHP · Electron · Unity · Flutter · Go · IPA
+> 覆盖 JAR · APK · EXE/DLL · ELF · Mach-O · .NET · JS/WASM · Python · PHP · Electron · Unity · Flutter · Go · IPA · 脱壳 · Rust · Swift · Lua · 固件 · LLM辅助 — 24 大类
 
 ---
 
@@ -694,7 +694,247 @@ binwalk -e app                            # 自动提取
 | Flutter/Dart | blutter + reFlutter + Frida |
 | Go 二进制 | GoReSym → Ghidra/IDA |
 | Tauri | dredd + Ghidra |
+| Rust 二进制 | rustfilt + Ghidra |
+| Lua/LuaJIT | unluac / luajit-decomp |
+| Swift/Kotlin Native | swift-demangle + Hopper / Ghidra |
+| 固件/IoT | binwalk → unblob → Ghidra |
+| 脱壳 | DIE 识别 → x64dbg+Scylla dump |
+| LLM 辅助 | Gepetto(IDA) / Ghidra MCP / dogbolt.org |
 | 快速 triage | strings + radare2 + binwalk |
+
+---
+
+## 十九、通用脱壳技术
+
+### 壳识别
+
+```bash
+# Detect-It-Easy (DIE) — 识别 200+ 种壳/编译器
+diec target.exe
+
+# PEiD 风格特征检测
+# UPX: magic "UPX0"/"UPX1" section, pushad 开头
+# ASPack: pushad → 循环 → popad + jmp OEP
+# Themida: 多层入口, VM 字节码解释器
+```
+
+### UPX
+
+```bash
+# 官方解压（仅限未修改 UPX）
+upx -d target.exe
+
+# 手动脱壳（改过 magix 头或变种）
+# x64dbg 加载 → 搜索 tail jump (大跳转) / POPAD
+# → 定位 OEP → Scylla dump + IAT 修复
+```
+
+### Scylla — IAT 重建（⭐1.4k `NtQuery/Scylla`）
+
+```
+x64dbg → 停在 OEP → 插件 → Scylla
+→ IAT AutoSearch → Get Imports → Fix Dump
+→ 选 dump 文件 → 生成 _SCY.exe
+```
+
+### PE-bear — PE 结构修复（⭐3.6k `hasherezade/pe-bear`）
+
+```
+手动修复 section raw/virtual size 对齐
+重建导入表/重定位表
+查看/编辑资源
+```
+
+### Unicorn 模拟脱壳
+
+| 工具 | 用途 |
+|------|------|
+| **Dumpulator** (⭐865) | Unicorn 内存模拟,提取配置/解密 payload |
+| **Qiling Framework** (⭐5.9k) | PE/ELF 全系统模拟,自动化脱壳 |
+| **Speakeasy** (⭐2k) | Mandiant 出品,Windows 内核+用户态模拟 |
+| **flare-emu** (⭐949) | IDA Pro 插件,Unicorn 模拟执行函数 |
+
+### 强壳对抗
+
+| 壳 | 工具/方法 |
+|----|----------|
+| **Themida** | TitanHide(内核反反调试) + ScyllaHide + OEP 硬件断点 → dump |
+| **VMProtect** | VMHunt trace VM handler / ScyllaHide + OEP dump |
+| **Enigma** | EnigmaVBUnpacker / CreateProcessInternalW 断点 |
+
+---
+
+## 二十、Rust 独立二进制逆向
+
+```bash
+# rustfilt — demangle Rust 符号（类似 c++filt）
+cargo install rustfilt
+nm binary | rustfilt
+strings binary | rustfilt
+
+# 提取 Cargo 依赖信息
+strings binary | grep -E "(crate|version|dependency)"
+```
+
+### Ghidra 分析要点
+
+- 搜索 `__rust_alloc` / `__rust_dealloc` → 反向追踪业务函数调用链
+- 标注 Rust 标准库函数签名：`Vec::push`、`String::as_str`、`Box::new`
+- Rust 胖指针（&str = 8B ptr + 8B len）→ 手动标记结构体
+- DWARF 含 `rustc` 标识 + 完整源码路径（debug 模式）
+- 恢复 main: 追踪 `std::rt::lang_start` → `rust_main`
+
+---
+
+## 二十一、Lua / LuaJIT 逆向
+
+### Lua 标准字节码
+
+```bash
+# unluac — 支持 Lua 5.0-5.4
+java -jar unluac.jar input.luac > output.lua
+
+# luac -s 剥离调试信息 = 无法恢复变量名/行号
+```
+
+### LuaJIT（与标准 Lua 完全不兼容）
+
+```bash
+# luajit-decomp（⭐272）— 支持 LuaJIT 2.0/2.1
+luajit-decomp input.ljbc > output.lua
+
+# 字节码列表（反汇编）
+luajit -bl input.lua
+luajit -b -l input.lua output.lst
+```
+
+### 游戏 Modding 常见场景
+
+| 游戏/引擎 | 解包 | 反编译 |
+|-----------|------|--------|
+| **GMod** | gmad 解包器 | gluasteal 提取 glua → gluac 反编译 |
+| **WoW** | WoW Lua Extractor | Blizzard 自定义 Lua 实现 |
+| **Roblox** | Roblox-Client-Tracker | rbx2source dump 函数 |
+| **Factorio** | 解包资源 | 专用反编译器（自定义字节码） |
+
+**加密 Lua 对抗**：游戏常用 XXTEA/AES 加密 `.luac`，在 `luaL_loadbuffer` 调用点下断 dump 解密后的字节码。
+
+---
+
+## 二十二、Kotlin Native / Swift 独立逆向
+
+### Swift
+
+```bash
+# swift-demangle — 还原混淆符号
+xcrun swift-demangle "$sSq"          # → Optional
+nm binary | xcrun swift-demangle
+
+# class-dump (ObjC) + Swift 类型元数据
+# .rodata 段含 Nominal Type Descriptor → 恢复 class/struct/enum
+# Hopper Disassembler — macOS 原生，Swift/ObjC 支持极佳
+```
+
+### Kotlin/Native
+
+- 编译为原生 ELF/Mach-O（无 DEX/字节码），**无专用反编译器**
+- 搜索 `Konan_` / `KRef` / `ObjHeader` 定位运行时函数
+- 对象继承自 `ObjHeader`，含 `type_info` 指针 → 手动恢复对象结构
+- 编译后代码膨胀严重（完整运行时库链接），`-opt` 可缩小
+
+---
+
+## 二十三、固件分析
+
+### binwalk 高级用法（⭐14k）
+
+```bash
+# 递归提取固件
+binwalk -Me firmware.bin
+
+# 熵分析（识别加密/压缩区域）
+binwalk -E firmware.bin
+
+# 自定义签名提取
+binwalk --magic custom.sig firmware.bin
+
+# Python API
+import binwalk
+binwalk.scan('firmware.bin', signature=True, extract=True)
+```
+
+### unblob — 现代固件提取（⭐2.5k）
+
+```bash
+unblob firmware.bin  # 自动递归提取 78+ 格式
+# 输出 → firmware.bin_extract/
+# 含 JSON 元数据报告
+```
+
+### 固件文件系统工具
+
+| 工具 | 格式 |
+|------|------|
+| **sasquatch** | 非标准 SquashFS |
+| **jefferson** | JFFS2 |
+| **ubi_reader** | UBI/UBIFS |
+| **firmware-mod-kit** | 提取+修改+重打包路由器固件 |
+
+### IoT 固件分析清单
+
+```bash
+# 关键文件
+grep -rE "(AES|key|secret|password|token|api)" . --binary-files=text
+cat etc/shadow         # 密码哈希
+cat etc/rc.d/*          # 启动脚本
+find . -name "*.cgi"    # CGI 程序（Ghidra 重点分析）
+find /www -type f        # Web 接口
+```
+
+---
+
+## 二十四、LLM 辅助逆向 + 2024-2026 新工具
+
+### LLM 工具
+
+| 工具 | 平台 | 说明 |
+|------|------|------|
+| **Gepetto** (⭐3.4k) | IDA Pro | 支持 OpenAI/Gemini/Ollama |
+| **reverse-engineering-assistant** (⭐741) | Ghidra | MCP 服务器,LLM 直连 Ghidra |
+| **binary_ninja_mcp** (⭐369) | Binary Ninja | MCP 协议集成 |
+| **reverser_ai** (⭐1k) | 独立 | 本地 LLM 自动逆向 |
+| **OGhidra** (⭐172) | Ghidra | Ollama 本地模型直连 |
+| **LLM4Decompile** (⭐6.7k) | 独立 | 用 LLM 直接反编译二进制 |
+
+### 2024-2026 新反编译器
+
+| 工具 | 亮点 |
+|------|------|
+| **garlic** (⭐512) | 最快开源 APK/Java 反编译器（C99） |
+| **pylingual** (⭐1.3k) | 现代 Python 3.8+ 字节码反编译 |
+| **hyperion-disassembler** (⭐172) | 原生多架构反汇编器,支持 Lua 脚本 |
+| **Ouroboros** (⭐248) | Rust 写的反编译器 |
+| **arkdecompiler** (⭐185) | 纯血鸿蒙反编译器 |
+| **bun-demincer** (⭐199) | Bun 编译 JS 反编译 |
+
+### 在线服务
+
+| 服务 | 功能 |
+|------|------|
+| **dogbolt.org** (⭐2.6k) | 多引擎并行对比（Ghidra/IDA/BN/angr/RetDec） |
+| **RetDec** (⭐8.5k) | Avast 开源,LLVM 后端,本地部署: `retdec-decompiler input.exe` |
+
+---
+
+### 版本更新（2026 年）
+
+| 工具 | 版本 | 更新要点 |
+|------|------|----------|
+| **Ghidra** | 12.1 | 位域恢复、ObjC 消息跟踪、Debuginfod、JDK 21 |
+| **jadx** | v1.5.5 | JDK 17+、Java 反编译质量持续改进 |
+| **angr** | 9.2 | 符号执行重构、Clinic 类型推导改进 |
+| **IDA Pro** | 9.3 | MCP 集成、AI 辅助分析 |
+| **Binary Ninja** | 5.3 | MCP 插件生态爆发 |
 
 ---
 
@@ -705,3 +945,9 @@ binwalk -e app                            # 自动提取
 3. **动静结合**：静态看不懂就上 Frida/x64dbg 动态跟
 4. **字符串是金矿**：搜 `http`/`secret`/`key`/`token`/`password`/加密算法名
 5. **运行时 dump 是终极杀招**：任何加密/混淆最终要在内存中解密,在那一刻 dump
+
+---
+
+## 📎 参考文件
+
+- [GitHub REST API 批量上传模式](references/github-upload-pattern.md) — `git push` 超时时用 Contents API 批量推文件，含 Fine-grained Token 权限配置和已知坑
